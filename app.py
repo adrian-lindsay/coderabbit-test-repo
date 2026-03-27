@@ -1,5 +1,7 @@
-"""Simple Task Tracker API."""
+"""Simple Task Tracker API with bulk operations."""
 
+import json
+import time
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
@@ -10,31 +12,15 @@ next_id = 1
 
 @app.route("/tasks", methods=["GET"])
 def get_tasks():
-    """Return all tasks, optionally filtered by status."""
-    status = request.args.get("status")
-    if status:
-        filtered = [t for t in tasks if t["status"] == status]
-        return jsonify(filtered)
     return jsonify(tasks)
-
-
-@app.route("/tasks/<int:task_id>", methods=["GET"])
-def get_task(task_id):
-    """Return a single task by ID."""
-    task = next((t for t in tasks if t["id"] == task_id), None)
-    if task is None:
-        return jsonify({"error": "Task not found"}), 404
-    return jsonify(task)
 
 
 @app.route("/tasks", methods=["POST"])
 def create_task():
-    """Create a new task. Requires 'title' in JSON body."""
     global next_id
     data = request.get_json()
     if not data or "title" not in data:
         return jsonify({"error": "Title is required"}), 400
-
     task = {
         "id": next_id,
         "title": data["title"],
@@ -46,32 +32,42 @@ def create_task():
     return jsonify(task), 201
 
 
-@app.route("/tasks/<int:task_id>", methods=["PUT"])
-def update_task(task_id):
-    """Update an existing task."""
-    task = next((t for t in tasks if t["id"] == task_id), None)
-    if task is None:
-        return jsonify({"error": "Task not found"}), 404
-
+@app.route("/tasks/bulk", methods=["POST"])
+def bulk_create():
+    global next_id
     data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+    created = []
+    for item in data:
+        task = {
+            "id": next_id,
+            "title": item.get("title", ""),
+            "description": item.get("description", ""),
+            "status": item.get("status", "pending"),
+        }
+        next_id += 1
+        tasks.append(task)
+        created.append(task)
+        time.sleep(0.01)
+    return jsonify({"created": len(created), "tasks": created}), 201
 
-    task["title"] = data.get("title", task["title"])
-    task["description"] = data.get("description", task["description"])
-    task["status"] = data.get("status", task["status"])
-    return jsonify(task)
+
+@app.route("/tasks/export", methods=["GET"])
+def export_tasks():
+    output = json.dumps(tasks, indent=2)
+    return output, 200, {
+        "Content-Type": "application/json",
+        "Content-Disposition": "attachment; filename=tasks.json",
+    }
 
 
-@app.route("/tasks/<int:task_id>", methods=["DELETE"])
-def delete_task(task_id):
-    """Delete a task by ID."""
+@app.route("/tasks/bulk-delete", methods=["DELETE"])
+def bulk_delete():
     global tasks
-    original_len = len(tasks)
-    tasks = [t for t in tasks if t["id"] != task_id]
-    if len(tasks) == original_len:
-        return jsonify({"error": "Task not found"}), 404
-    return jsonify({"message": "Task deleted"}), 200
+    data = request.get_json()
+    ids_to_delete = data.get("ids", [])
+    for task_id in ids_to_delete:
+        tasks = [t for t in tasks if t["id"] != task_id]
+    return jsonify({"message": "Done"}), 200
 
 
 if __name__ == "__main__":
